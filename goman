@@ -1,0 +1,328 @@
+#!/usr/bin/env bash
+
+# set -e
+
+version=0.0.1
+
+name=${0##*/}
+uid=$(id -u)
+
+matchVersion='^go1.[0-9]{2}(((.|beta|rc)[0-9]+)?)$'
+
+if [ "${uid}" == "0" ]; then
+    sdkRoot=/usr/local/golang
+else
+    if [ -z "${HOME}" ]; then
+        sdkRoot=$(pwd)/sdk
+    else
+        sdkRoot=${HOME}/sdk
+    fi
+fi
+
+downloadTip() {
+    echo "$1 not downloaded, use \`${name} download $1\` download it first."
+    exit 1
+}
+
+checkVersion() {
+    if [ -z "$1" ]; then
+        echo help
+        return 0
+    else
+        case $1 in
+        -h | --help | help)
+            echo help
+            return 0
+            ;;
+        *)
+            if [[ "${ver}" =~ ${matchVersion} ]]; then
+                echo "${ver}"
+                return 0
+            else
+                echo "version \`$1\` is malformed, expect like \`go1.17rc1\` or \`go1.16.5\`"
+                return 1
+            fi
+            ;;
+        esac
+    fi
+}
+
+verMalformedTip() {
+    echo "version \`$1\` is malformed, expect like \`go1.17rc1\` or \`go1.16.5\`"
+    exit 1
+}
+
+listUsage() {
+    echo "Usage:"
+    echo "    ${name} list [Flags]:"
+    echo ""
+    echo "Flags:"
+    echo "    -a    list both stable and unstable versions"
+    echo "    -u    list unstable versions"
+    echo "    -i    list installed versions"
+}
+
+listInstalled() {
+    if [ -d "${sdkRoot}" ]; then
+        for v in $(ls ${sdkRoot} | grep go1); do
+            if [ -f "${sdkRoot}/${v}/.unpacked-success" ]; then
+                echo "${v}"
+            fi
+        done
+    fi
+}
+
+listRemotes() {
+    curl -SsL https://api.github.com/repos/golang/dl/git/trees/master | grep -Eo "\"$1\"" | sed 's/"//g' | sort -r | awk '{if(NR%5==0){printf "%s\n", $0}else{printf "%-11s  ", $0}}'
+    echo
+}
+
+list() {
+    exp='go1.[0-9]{2}(((.|beta|rc)[0-9]+)?)'
+    while getopts hiau c; do
+        case $c in
+        h)
+            echo "list available versions"
+            echo ""
+            listUsage
+            exit 1
+            ;;
+        a)
+            listRemotes 'go1.[0-9]{2}(((.|beta|rc)[0-9]+)?)'
+            exit 0
+            ;;
+        u)
+            listRemotes 'go1.[0-9]{2}(rc|beta)[0-9]'
+            exit 0
+            ;;
+        i)
+            listInstalled | sort -r | awk '{if(NR%3==0){printf "%s\n", $0}else{printf "%-11s  ", $0}}'
+            echo
+            exit 0
+            ;;
+        ?)
+            echo ""
+            listUsage
+            exit 2
+            ;;
+        esac
+    done
+
+    listRemotes 'go1.[0-9]{2}((.[0-9]+)?)'
+    exit 0
+}
+
+downloadUsage() {
+    echo "download go version"
+    echo ""
+    echo "Usage:"
+    echo "  ${name} download <version>"
+    echo ""
+    echo "Example:"
+    echo "  ${name} download go1.17rc1"
+    echo "  ${name} download go1.16.6"
+    echo
+}
+
+download() {
+    ver=$(checkVersion $1)
+    ec=$?
+    if [ $ec -ne 0 ]; then
+        echo ${ver}
+        exit ${ec}
+    elif [ "${ver}" == "help" ]; then
+        downloadUsage
+        exit 1
+    elif [ -f "${sdkRoot}/${ver}/.unpacked-success" ]; then
+        echo "the ${ver} has already downloaded, use \`${name} link ${ver}\` set to current."
+        echo "if you want to redownload this version, use \`${name} remove ${ver}\` delete it first."
+        exit 0
+    fi
+
+    goos=$(uname | tr 'A-Z' 'a-z')
+    goarch=$(uname -m | tr 'A-Z' 'a-z')
+
+    case ${goarch} in
+    arm_64 | arm64)
+        goarch=arm64
+        ;;
+    x86_64)
+        goarch=amd64
+        ;;
+    x86)
+        goarch=386
+        ;;
+    esac
+
+    if [ "${goos}" == "linux" ]; then
+        case ${goarch} in
+        amd64 | 386 | arm64) ;;
+        armv7 | armv7l | armv6 | armv6l)
+            goarch=armv6l
+            ;;
+        ppc64le)
+            goarch=ppc64le
+            ;;
+        s390x)
+            goarch=ppc64le
+            ;;
+        *)
+            echo "not support arch: ${goarch}"
+            ;;
+        esac
+    fi
+
+    url="https://golang.google.cn/dl/${ver}.${goos}-${goarch}.tar.gz"
+
+    echo "download ${ver} from ${url}"
+    rm -rf ${sdkRoot}/temp
+    mkdir -p ${sdkRoot}/temp
+    curl -L --progress-bar ${url} | tar -C ${sdkRoot}/temp -zx
+
+    rm -rf ${sdkRoot}/${ver}
+    mv ${sdkRoot}/temp/go ${sdkRoot}/${ver}
+    touch ${sdkRoot}/${ver}/.unpacked-success
+
+    rm -f ${sdkRoot}/current
+    ln -fs ${sdkRoot}/${ver} ${sdkRoot}/current
+    GOROOT=${sdkRoot}/current ${sdkRoot}/current/bin/go version
+
+    rm -rf ${sdkRoot}/temp
+}
+
+removeUsage() {
+    echo "remove go version"
+    echo ""
+    echo "Usage:"
+    for v in $(listInstalled); do
+        echo "  ${name} remove ${v}"
+    done
+    echo
+}
+
+remove() {
+    ver=$(checkVersion $1)
+    ec=$?
+    if [ $ec -ne 0 ]; then
+        echo ${ver}
+        exit ${ec}
+    elif [ "${ver}" == "help" ]; then
+        removeUsage
+        exit 1
+    elif [ -d "${sdkRoot}/${ver}" ]; then
+        echo "remove ${ver}"
+        rm -rf ${sdkRoot}/${ver}
+    else
+        echo "${ver} hasn not downloaded"
+        exit 1
+    fi
+}
+
+linkUsage() {
+    echo "link go version to current"
+    echo ""
+    echo "Usage:"
+    for v in $(listInstalled); do
+        echo "  ${name} link ${v}"
+    done
+    echo
+}
+
+linkCurrent() {
+    ver=$(checkVersion $1)
+    ec=$?
+    if [ $ec -ne 0 ]; then
+        echo ${ver}
+        exit ${ec}
+    elif [ "${ver}" == "help" ]; then
+        linkUsage
+        exit 1
+    elif [ -f "${sdkRoot}/${ver}/.unpacked-success" ]; then
+        echo "link ${ver}"
+        rm -f ${sdkRoot}/current
+        ln -fs ${sdkRoot}/${ver} ${sdkRoot}/current
+        GOROOT=${sdkRoot}/current ${sdkRoot}/current/bin/go version
+    else
+        downloadTip ${ver}
+    fi
+}
+
+install() {
+    echo "link go to /usr/local/bin/go"
+    if [ -x "${sdkRoot}/current/bin/go" ]; then
+        ln -fs ${sdkRoot}/current/bin/go /usr/local/bin/go
+        ln -fs ${sdkRoot}/current/bin/gofmt /usr/local/bin/gofmt
+        echo "/usr/local/bin/go -> $(readlink /usr/local/bin/go)"
+        /usr/local/bin/go version
+    else
+        echo "\`${sdkRoot}/current/bin/go\` is not exist"
+    fi
+}
+
+mainUsage() {
+    echo "manage the sdk of golang"
+    echo ""
+    echo "Usage:"
+    echo "    ${name} [Command] [Flags]:"
+    echo "    ${name} <goVersion> [go command and flags]"
+    echo ""
+    echo "Available Commands:"
+    echo "    ls, list          list available gosdk"
+    echo "    dl, download      download version"
+    echo "    rm, remove        remove gosdk"
+    echo "    ln, link          link the version"
+}
+
+goExec() {
+    ver=$(checkVersion $1)
+    ec=$?
+    if [ $ec -ne 0 ]; then
+        echo ${ver}
+        exit ${ec}
+    elif [ "${ver}" == "help" ]; then
+        removeUsage
+        exit 1
+    elif [ -x "${sdkRoot}/${ver}/bin/go" ]; then
+        GOROOT=${sdkRoot}/${ver} ${sdkRoot}/${ver}/bin/go ${@:2}
+    elif [ -x "/usr/local/golang/${ver}/bin/go" ]; then
+        GOROOT=/usr/local/golang/${ver} /usr/local/golang/${ver}/bin/go ${@:2}
+    else
+        downloadTip ${ver}
+    fi
+}
+
+main() {
+    command=$1
+    if [ -z "${command}" ]; then
+        mainUsage
+        exit 1
+    fi
+
+    case ${command} in
+    -h | --help | help)
+        mainUsage
+        echo
+        exit 1
+        ;;
+    list | ls)
+        list ${@:2}
+        ;;
+    download | dl)
+        download ${@:2}
+        ;;
+    link | ln)
+        linkCurrent ${@:2}
+        ;;
+    remove | rm)
+        remove ${@:2}
+        ;;
+    install)
+        install
+        ;;
+    *)
+        goExec $@
+        ;;
+    esac
+}
+
+main $@
