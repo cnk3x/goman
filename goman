@@ -1,22 +1,17 @@
 #!/usr/bin/env bash
 
-# set -e
-
 version=0.0.1
 
 name=${0##*/}
 uid=$(id -u)
-
 matchVersion='^go1.[0-9]{2}(((.|beta|rc)[0-9]+)?)$'
 
 if [ "${uid}" == "0" ]; then
     sdkRoot=/usr/local/golang
+elif [ -n "${HOME}" ]; then
+    sdkRoot=${HOME}/sdk
 else
-    if [ -z "${HOME}" ]; then
-        sdkRoot=$(pwd)/sdk
-    else
-        sdkRoot=${HOME}/sdk
-    fi
+    sdkRoot=$(pwd)/sdk
 fi
 
 downloadTip() {
@@ -35,8 +30,8 @@ checkVersion() {
             return 0
             ;;
         *)
-            if [[ "${ver}" =~ ${matchVersion} ]]; then
-                echo "${ver}"
+            if [[ "$1" =~ ${matchVersion} ]]; then
+                echo "$1"
                 return 0
             else
                 echo "version \`$1\` is malformed, expect like \`go1.17rc1\` or \`go1.16.5\`"
@@ -45,11 +40,6 @@ checkVersion() {
             ;;
         esac
     fi
-}
-
-verMalformedTip() {
-    echo "version \`$1\` is malformed, expect like \`go1.17rc1\` or \`go1.16.5\`"
-    exit 1
 }
 
 listUsage() {
@@ -121,15 +111,13 @@ downloadUsage() {
     echo "Example:"
     echo "  ${name} download go1.17rc1"
     echo "  ${name} download go1.16.6"
-    echo
 }
 
 download() {
     ver=$(checkVersion $1)
-    ec=$?
-    if [ $ec -ne 0 ]; then
+    if [ $? -eq 1 ]; then
         echo ${ver}
-        exit ${ec}
+        exit 1
     elif [ "${ver}" == "help" ]; then
         downloadUsage
         exit 1
@@ -172,7 +160,7 @@ download() {
         esac
     fi
 
-    url="https://golang.google.cn/dl/${ver}.${goos}-${goarch}.tar.gz"
+    url="https://dl.google.com/go/${ver}.${goos}-${goarch}.tar.gz"
 
     echo "download ${ver} from ${url}"
     rm -rf ${sdkRoot}/temp
@@ -197,15 +185,13 @@ removeUsage() {
     for v in $(listInstalled); do
         echo "  ${name} remove ${v}"
     done
-    echo
 }
 
 remove() {
     ver=$(checkVersion $1)
-    ec=$?
-    if [ $ec -ne 0 ]; then
+    if [ $? -eq 1 ]; then
         echo ${ver}
-        exit ${ec}
+        exit 1
     elif [ "${ver}" == "help" ]; then
         removeUsage
         exit 1
@@ -225,15 +211,13 @@ linkUsage() {
     for v in $(listInstalled); do
         echo "  ${name} link ${v}"
     done
-    echo
 }
 
 linkCurrent() {
     ver=$(checkVersion $1)
-    ec=$?
-    if [ $ec -ne 0 ]; then
+    if [ $? -eq 1 ]; then
         echo ${ver}
-        exit ${ec}
+        exit 1
     elif [ "${ver}" == "help" ]; then
         linkUsage
         exit 1
@@ -247,15 +231,34 @@ linkCurrent() {
     fi
 }
 
+installUsage() {
+    echo "link go of current version to /usr/local/bin/go"
+    echo ""
+    echo "Usage:"
+    echo "  ${name} install"
+}
+
 install() {
-    echo "link go to /usr/local/bin/go"
-    if [ -x "${sdkRoot}/current/bin/go" ]; then
-        ln -fs ${sdkRoot}/current/bin/go /usr/local/bin/go
-        ln -fs ${sdkRoot}/current/bin/gofmt /usr/local/bin/gofmt
-        echo "/usr/local/bin/go -> $(readlink /usr/local/bin/go)"
-        /usr/local/bin/go version
+    case $1 in
+    -h | --help | help)
+        installUsage
+        exit 1
+        ;;
+    esac
+
+    if [ -n "$1" ]; then
+        echo "unknown flag: $1"
+        exit 1
     else
-        echo "\`${sdkRoot}/current/bin/go\` is not exist"
+        echo "link go of current version to /usr/local/bin/go"
+        if [ -x "${sdkRoot}/current/bin/go" ]; then
+            ln -fs ${sdkRoot}/current/bin/go /usr/local/bin/go
+            ln -fs ${sdkRoot}/current/bin/gofmt /usr/local/bin/gofmt
+            echo "/usr/local/bin/go -> $(readlink /usr/local/bin/go)"
+            /usr/local/bin/go version
+        else
+            echo "\`${sdkRoot}/current/bin/go\` is not exist"
+        fi
     fi
 }
 
@@ -275,12 +278,11 @@ mainUsage() {
 
 goExec() {
     ver=$(checkVersion $1)
-    ec=$?
-    if [ $ec -ne 0 ]; then
-        echo ${ver}
-        exit ${ec}
+    if [ $? -eq 1 ]; then
+        echo "unknown command: $1"
+        exit 1
     elif [ "${ver}" == "help" ]; then
-        removeUsage
+        mainUsage
         exit 1
     elif [ -x "${sdkRoot}/${ver}/bin/go" ]; then
         GOROOT=${sdkRoot}/${ver} ${sdkRoot}/${ver}/bin/go ${@:2}
@@ -301,7 +303,6 @@ main() {
     case ${command} in
     -h | --help | help)
         mainUsage
-        echo
         exit 1
         ;;
     list | ls)
@@ -317,7 +318,7 @@ main() {
         remove ${@:2}
         ;;
     install)
-        install
+        install ${@:2}
         ;;
     *)
         goExec $@
