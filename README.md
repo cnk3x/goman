@@ -2,13 +2,21 @@
 
 go sdk manage
 
+管理和安装 go sdk
+
 ## install
 
 ```shell
 curl -SsL https://raw.githubusercontent.com/shuxs/goman/main/install.sh | bash
 ```
 
-## usage:
+**国内**
+
+```shell
+curl -SsL https://gitee.com/wenaiyao/goman/raw/main/install.sh | bash
+```
+
+## usage
 
 ```shell
 $ goman
@@ -47,7 +55,7 @@ Usage:
 
 Example:
   goman download go1.17rc1
-  goman download go1.16.6
+  goman download go1.17.1
 ```
 
 ```shell
