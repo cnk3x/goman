@@ -7,7 +7,7 @@ uid=$(id -u)
 matchVersion='^go1.[0-9]{2}(((.|beta|rc)[0-9]+)?)$'
 
 if [ "${uid}" == "0" ]; then
-    sdkRoot=/usr/local/golang
+    sdkRoot=/opt/golang
 elif [ -n "${HOME}" ]; then
     sdkRoot=${HOME}/sdk
 else
@@ -286,8 +286,6 @@ goExec() {
         exit 1
     elif [ -x "${sdkRoot}/${ver}/bin/go" ]; then
         GOROOT=${sdkRoot}/${ver} ${sdkRoot}/${ver}/bin/go ${@:2}
-    elif [ -x "/usr/local/golang/${ver}/bin/go" ]; then
-        GOROOT=/usr/local/golang/${ver} /usr/local/golang/${ver}/bin/go ${@:2}
     else
         downloadTip ${ver}
     fi
