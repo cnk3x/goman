@@ -7,13 +7,13 @@ go sdk manage
 ## install
 
 ```shell
-curl -SsL https://raw.githubusercontent.com/shuxs/goman/main/install.sh | bash
+curl -SsL https://raw.githubusercontent.com/cnk3x/goman/main/install.sh | bash
 ```
 
 **国内**
 
 ```shell
-curl -SsL https://gitee.com/wenaiyao/goman/raw/main/install_gitee.sh | bash
+curl -SsL https://gitee.com/k3x/goman/raw/main/install_gitee.sh | bash
 ```
 
 ## usage

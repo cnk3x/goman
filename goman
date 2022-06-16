@@ -2,7 +2,7 @@
 
 set -e
 
-sdkRoot=${GOSDK_ROOT:-/opt/golang}
+sdkRoot=${GOSDK_ROOT:-$HOME/sdk/golang}
 dlPage=${GOSDK_DOWNLOAD_PAGE:-https://golang.google.cn/dl}
 tipRepo=${GOSDK_TIP_REPO:-https://gitee.com/mirrors/go.git}
 
