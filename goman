@@ -208,7 +208,7 @@ remove() {
     fi
 
     checkRoot
-    local version=go${version}
+    local version=${version}
     local dir_version=${sdkRoot}/${version}
     local dir_current=${sdkRoot}/current
     local dir_cur_link=$(readlink ${dir_current})
