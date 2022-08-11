@@ -456,11 +456,15 @@ main() {
         return 1
     fi
 
-    GOROOT=${GOSDK_ROOT}/${version}
-    if [ -f "${GOROOT}/.unpacked-success" ]; then
-        GOROOT=${GOROOT} ${GOROOT}/bin/go ${@:2}
+    if command -v gotip >/dev/null; then
+        gotip ${@:2}
     else
-        showTip ${version}
+        GOROOT=${GOSDK_ROOT}/${version}
+        if [ -f "${GOROOT}/.unpacked-success" ]; then
+            GOROOT=${GOROOT} ${GOROOT}/bin/go ${@:2}
+        else
+            showTip ${version}
+        fi
     fi
 }
 
