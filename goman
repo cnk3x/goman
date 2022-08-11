@@ -2,98 +2,154 @@
 
 set -e
 
-sdkRoot=${GOSDK_ROOT:-/var/lib/golang}
+GOSDK_ROOT=${GOSDK_ROOT:-/var/lib/golang}
+GOSDK_PATH=${GOSDK_PATH:-/usr/local/bin}
 dlPage=${GOSDK_DOWNLOAD_PAGE:-https://golang.google.cn/dl}
 tipRepo=${GOSDK_TIP_REPO:-https://gitee.com/mirrors/go.git}
 
 name=${0##*/}
 
-versionMatch='[1-9]\.[0-9]+(((rc|beta)[0-9]*)|(\.[0-9]+))?'
-allVersionMatch="go${versionMatch}"
-unstableVersionMatch='go[1-9]\.[0-9]+(rc|beta)[0-9]*'
-stableVersionMatch='go[1-9]\.[0-9]+(\.[0-9]+)?'
+versionMatch='[0-9][0-9.]+(rc|beta|[0-9])+'
 
 checkRoot() {
     if [ "$(id -u)" -ne 0 ]; then
-        echo "需要Root权限，请使用: sudo goman ..."
-        exit
+        echo "需要Root权限，请使用: sudo ${name} ..."
+        exit 1
     fi
 }
 
-downloadTip() {
-    echo "$1 没有下载, 请先使用 \`${name} download $1\` 下载."
-    exit 1
+getOs() {
+    uname | tr 'A-Z' 'a-z'
 }
 
-checkVersion() {
-    if [ -z "$1" ]; then
-        echo help
-        return 0
+getArch() {
+    if command -v dpkg >/dev/null; then
+        dpkg --print-architecture
     else
-        case $1 in
-        -h | --help | help)
-            echo help
-            return 0
+        case $(uname -m | tr 'A-Z' 'a-z') in
+        x86_64)
+            echo amd64
             ;;
-        *)
-            if [ $1 == "tip" -o $1 == "gotip" ]; then
-                echo gotip
-                return 0
-            fi
-
-            if [[ "$1" =~ ^(go)?${versionMatch}$ ]]; then
-                if [[ $1 =~ ^go ]]; then
-                    echo "$1"
-                else
-                    echo "go$1"
-                fi
-                return 0
-            fi
-
-            echo "版本 \`$1\` 格式错误, 或命令不存在"
-            return 1
+        x86)
+            echo 386
+            ;;
+        armv7 | armv7l | armv6 | armv6l)
+            echo armv6l
+            ;;
+        armv8 | aarch64 | arm64)
+            echo arm64
+            ;;
+        ppc64le | ppc64 | ppc)
+            echo ppc64le
+            ;;
+        s390x | s390)
+            echo s390x
             ;;
         esac
     fi
 }
 
-getInstalledVersions() {
-    ls ${sdkRoot}/*/.unpacked-success |
-        grep -Eo ${allVersionMatch} |
-        sed 's/go//g; s/b/.b/g; s/r/.r/g; s/$/&.s/g' |
-        sort -urV |
-        sed 's/\.s$//g; s/.r/r/g; s/.b/b/g'
+findVer() {
+    grep -Eo "${versionMatch}" | sed 's/go//g'
 }
 
-getRemoteVersions() {
-    curl -SsL ${dlPage} |
-        grep -Eo $1 |
-        sed 's/go//g; s/b/.b/g; s/r/.r/g; s/$/&.s/g' |
-        sort -urV |
-        sed 's/\.s$//g; s/.r/r/g; s/.b/b/g' |
-        head -n 100 |
-        awk '{if(NR%5==0){printf "%s\n", $0}else{printf "%-12s", $0}}'
+findGoVer() {
+    grep -Eo "go${versionMatch}" | sed 's/go//g'
+}
+
+getCurrent() {
+    (if command -v go >/dev/null; then go version; else echo go0.0; fi) | findGoVer
+}
+
+getNewest() {
+    local c="$(getCurrent)"
+    local n="0.0"
+    if [ "$c" = "0.0" -o "$1" != "-c" ]; then
+        n=$(curl -sL "${dlPage}/?mode=json" | grep version | head -n 1 | sed 's/ //g; s/"//g; s/version:go//g; s/,//g')
+    else
+        n=$(fetchRemoteVersions | grep "$(echo $c | awk -F . '{print $1 "." $2}')" | sortVer | head -n 1)
+    fi
+
+    if [ "$c" != "$n" ]; then
+        echo $n
+    fi
+}
+
+compareVersion() {
+    echo "$@" | tr " " "\n" | sed 's/go//g' | sortVer | head -n 1
+}
+
+showTip() {
+    echo "$1 没有下载, 请先使用 \`${name} download $1\` 下载."
+    return 1
+}
+
+getInputVersion() {
+    case "$1" in
+    -h | --help | help)
+        echo help
+        ;;
+    gotip | tip)
+        echo gotip
+        ;;
+    *)
+        if [ -z "$1" ]; then
+            echo help
+        fi
+
+        ver=$(echo $1 | findVer)
+        if [ -n "$ver" ]; then
+            echo go$ver
+        fi
+        ;;
+    esac
+}
+
+listInstalledVersions() {
+    ls ${GOSDK_ROOT}/*/.unpacked-success | findGoVer | sortVer
+}
+
+showGrid() {
+    awk '{if(NR%5==0){printf "%s\n", $0}else{printf "%-12s", $0}}'
     echo
 }
 
+unstableFilter() {
+    grep -v rc | grep -v beta
+}
+
+sortVer() {
+    sed 's/b/.b/g; s/r/.r/g; s/$/.z/g;' | sort -urV | sed 's/.r/r/g; s/.b/b/g; s/.z//g'
+}
+
+fetchRemoteVersions() {
+    curl -SsL ${dlPage} | findGoVer
+}
+
+checkInstall() {
+    if [ ! -x "${GOSDK_PATH}/go" ]; then
+        ln -fs ${GOSDK_ROOT}/current/bin/go ${GOSDK_PATH}/go
+    fi
+
+    if [ ! -x ${GOSDK_PATH}/gofmt ]; then
+        ln -fs ${GOSDK_ROOT}/current/bin/gofmt ${GOSDK_PATH}/gofmt
+    fi
+}
+
 list() {
-    while getopts hiau option; do
+    while getopts hiacx option; do
         case $option in
+        c)
+            getCurrent
+            return 0
+            ;;
         i)
-            echo "已安装版本"
-            getInstalledVersions | awk '{if(NR%5==0){printf "%s\n", $0}else{printf "%-12s", $0}}'
-            echo
-            exit 0
+            listInstalledVersions
+            return 0
             ;;
         a)
-            echo "所有版本"
-            getRemoteVersions ${allVersionMatch}
-            exit 0
-            ;;
-        u)
-            echo "非稳定版本"
-            getRemoteVersions ${unstableVersionMatch}
-            exit 0
+            fetchRemoteVersions | sortVer | showGrid
+            return 0
             ;;
         *)
             echo "列出版本号"
@@ -103,22 +159,54 @@ list() {
             echo ""
             echo "Flags:"
             echo "    -a    列出所有可安装的版本号"
-            echo "    -u    仅列出非稳定版本号"
-            echo "    -i    list installed versions"
-            exit 2
+            echo "    -i    列出已安装的版本"
+            echo "    -c    当前使用版本"
+            return 2
             ;;
         esac
     done
+    fetchRemoteVersions | unstableFilter | sortVer | showGrid
+}
 
-    echo "稳定版本"
-    getRemoteVersions ${stableVersionMatch}
+up() {
+    if [ -z "$1" -o "$1" = "-c" ]; then
+        local version=$(getNewest $1)
+        if [ -z "$version" ]; then
+            echo "无更新"
+        elif [ -f "${GOSDK_ROOT}/${version}/.unpacked-success" ]; then
+            setDefault $version
+        else
+            echo "最新版本: $version, 更新"
+            download $version
+            setDefault $version
+        fi
+        return 0
+    fi
+
+    echo "更新当前使用的版本到最新版"
+    echo ""
+    echo "Usage:"
+    echo "    ${name} upgrade [Flags]"
+    echo ""
+    echo "Example:"
+    echo "    ${name} upgrade"
+    echo "    ${name} upgrade -c"
+    echo ""
+    echo "Flags:"
+    echo "    -c    更新当前小版本到最新版"
+    return 1
 }
 
 download() {
-    version=$(checkVersion $1)
-    if [ "$?" -ne 0 ]; then
-        echo ${version}
-        exit 1
+    version=$(getInputVersion $1)
+    if [ -z "${version}" ]; then
+        echo "版本格式错误: $1"
+        return 1
+    fi
+
+    if [ "${version}" == "tip" ]; then
+        downloadTip
+        return 0
     fi
 
     if [ "${version}" == "help" ]; then
@@ -130,210 +218,256 @@ download() {
         echo "Example:"
         echo "  ${name} download go1.17rc1"
         echo "  ${name} download go1.16.6"
-        exit 1
+        return 1
     fi
 
-    if [ -f "${sdkRoot}/${version}/.unpacked-success" ]; then
-        echo "该版本 ${version} 已经下载, 可使用 \`${name} install ${version}\` 来安装这个版本"
-        echo "如果您要重新下载该版本, 请先使用 \`${name} remove ${version}\` 删除它"
-        exit 0
+    if [ -f "${GOSDK_ROOT}/${version}/.unpacked-success" ]; then
+        checkInstall
+        return 0
     fi
 
     checkRoot
 
-    goos=$(uname | tr 'A-Z' 'a-z')
-    goarch=$(uname -m | tr 'A-Z' 'a-z')
+    goos=$(getOs)
+    goarch=$(getArch)
 
-    case ${goarch} in
-    arm_64 | arm64)
-        goarch=arm64
-        ;;
-    x86_64)
-        goarch=amd64
-        ;;
-    x86)
-        goarch=386
-        ;;
-    esac
-
-    if [ "${goos}" == "linux" ]; then
-        case ${goarch} in
-        amd64 | 386 | arm64) ;;
-        armv7 | armv7l | armv6 | armv6l)
-            goarch=armv6l
-            ;;
-        armv8)
-            goarch=arm64
-            ;;
-        ppc64le)
-            goarch=ppc64le
-            ;;
-        s390x)
-            goarch=ppc64le
-            ;;
-        *)
-            echo "不支持的平台架构: ${goarch}"
-            ;;
-        esac
+    if [ -z "${goos}" -o -z "${goarch}" ]; then
+        echo "不支持的系统 $(uname -a)"
+        return 1
     fi
 
     url="${dlPage}/${version}.${goos}-${goarch}.tar.gz"
 
     echo "下载版本: ${version}， 地址: ${url}"
 
-    GOROOT=${sdkRoot}/${version}
+    GOROOT=${GOSDK_ROOT}/${version}
     rm -rf ${GOROOT}
     mkdir -p ${GOROOT}
     curl -L --progress-bar ${url} | tar -C ${GOROOT} --strip-components 1 -zx
     touch ${GOROOT}/.unpacked-success
     GOROOT=${GOROOT} ${GOROOT}/bin/go version
+
+    checkInstall
     echo "下载完成"
 }
 
 remove() {
-    version=$(checkVersion $1)
-    if [ "$?" -ne 0 ]; then
-        echo ${version}
-        exit 1
+    version=$(getInputVersion $1)
+    if [ -z "${version}" ]; then
+        echo "版本格式错误: $1"
+        return 1
+    fi
+
+    if [ "${version}" == "tip" ]; then
+        echo "开始卸载: gotip"
+        echo "删除链接: ${GOSDK_PATH}/gotip"
+        echo "删除目录: ${GOSDK_ROOT}"
+        rm -rf ${GOSDK_ROOT} ${GOSDK_PATH}/gotip
+        return 0
     fi
 
     if [ "${version}" == "help" ]; then
         echo "删除版本"
         echo ""
         echo "Usage:"
-        for v in $(getInstalledVersions); do
-            echo "  ${name} remove ${v}"
-        done
-        exit 1
-    fi
-
-    checkRoot
-    local version=${version}
-    local dir_version=${sdkRoot}/${version}
-    local dir_current=${sdkRoot}/current
-    local dir_cur_link=$(readlink ${dir_current})
-
-    echo "开始卸载: ${version}"
-
-    if [ -d "${dir_version}" ]; then
-        echo "删除目录: ${dir_version}"
-        rm -rf ${dir_version}
-        echo "删除成功!"
-    fi
-
-    if [ "${dir_cur_link}" = "${dir_version}" ]; then
-        echo "删除链接: ${dir_current} -> ${dir_cur_link}"
-        echo "删除链接: /usr/local/bin/go -> $(readlink /usr/local/bin/go)"
-        echo "删除链接: /usr/local/bin/gofmt -> $(readlink /usr/local/bin/go)"
-        rm -f ${dir_current} /usr/local/bin/go /usr/local/bin/gofmt
-        echo "删除成功!"
-        local dir_new_version="$(
-            ls ${sdkRoot} |
-                grep -Eo ${versionMatch} |
-                sed 's/go//g; s/b/.b/g; s/r/.r/g; s/$/&.s/g' |
-                sort -urV |
-                sed 's/\.s$//g; s/.r/r/g; s/.b/b/g' |
-                head -n1
-        )"
-        if [ -n "${dir_new_version}" ]; then
-            echo "切换版本: ${dir_new_version}"
-            ln -fs "${sdkRoot}/go${dir_new_version}" ${dir_current}
-            ln -fs ${dir_current}/bin/go /usr/local/bin/go
-            ln -fs ${dir_current}/bin/gofmt /usr/local/bin/gofmt
-            echo "当前版本: $(/usr/local/bin/go version)"
-        fi
-    fi
-    echo "删除完成!"
-}
-
-installTip() {
-    set -x
-    local dir_version=${sdkRoot}/gotip
-    if [ -d "${dir_version}/.git" ]; then
-        local repo=$(git -C /opt/golang/gotip remote get-url origin)
-        if [ "${repo}" != "${tipRepo}" ]; then
-            git -C ${dir_version} remote set-url origin ${tipRepo}
-        fi
-    else
-        rm -rf ${dir_version}
-        git clone --depth=1 ${tipRepo} ${dir_version}
-    fi
-
-    git -C ${dir_version} fetch origin master
-    git -C ${dir_version} -c advice.detachedHead=false checkout FETCH_HEAD
-    git -C ${dir_version} clean -i -d
-    cd ${dir_version}/src
-    GOROOT_BOOTSTRAP=$(go env GOROOT) ${dir_version}/src/make.bash
-    ln -fs ${dir_version}/bin/go /usr/local/bin/gotip
-}
-
-install() {
-    if [ $1 == "tip" -o $1 == "gotip" ]; then
-        installTip
-        exit 0
-    fi
-
-    version=$(checkVersion $1)
-    if [ "$?" -ne 0 ]; then
-        echo ${version}
-        exit 1
-    fi
-
-    if [ "${version}" == "help" ]; then
-        echo "install version"
+        echo "    ${name} remove <version>"
         echo ""
-        echo "Usage:"
-        for v in $(getInstalledVersions); do
-            echo "  ${name} install ${v}"
+        echo "Example:"
+        for v in $(listInstalledVersions); do
+            echo "    ${name} remove ${v}"
         done
-        exit 1
+        return 1
     fi
 
     checkRoot
+    local vRoot=${GOSDK_ROOT}/${version}
 
-    GOROOT=${sdkRoot}/${version}
-    if [ -f "${GOROOT}/.unpacked-success" ]; then
-        rm -f ${sdkRoot}/current
-        ln -fs ${GOROOT} ${sdkRoot}/current
-        ln -fs ${GOROOT}/bin/go /usr/local/bin/go
-        ln -fs ${GOROOT}/bin/gofmt /usr/local/bin/gofmt
+    if [ -d "${vRoot}" ]; then
+        echo "开始卸载: ${version}"
+        echo "删除目录: ${vRoot}"
+        rm -rf ${vRoot}
+        echo "删除成功!"
+    fi
+
+    # local dir_cur_link=$(readlink ${dir_current})
+    # local dir_current=${GOSDK_ROOT}/current
+    # if [ "${dir_cur_link}" = "${vRoot}" ]; then
+    #     echo "删除链接: ${dir_current} -> ${dir_cur_link}"
+    #     echo "删除链接: ${GOSDK_PATH}/go -> $(readlink ${GOSDK_PATH}/go)"
+    #     echo "删除链接: ${GOSDK_PATH}/gofmt -> $(readlink ${GOSDK_PATH}/go)"
+    #     rm -f ${dir_current} ${GOSDK_PATH}/go ${GOSDK_PATH}/gofmt
+    #     echo "删除成功!"
+    # fi
+}
+
+cleanupVersion() {
+    local version=$1
+    if [ -n "${version}" ]; then
+        version=$(echo $version | sed 's/go//g')
+        for n in $(
+            ls ${GOSDK_ROOT} |
+                grep -v current | grep -v gotip |
+                findGoVer |
+                grep "$(echo $version | awk -F . '{print $1 "." $2}')" |
+                sortVer | awk 'NR>1'
+        ); do
+            echo remove $n
+            remove $n
+        done
+    fi
+}
+
+cleanup() {
+    if [ -n "$1" ]; then
+        version=$(getInputVersion $1)
+        if [ -z "${version}" ]; then
+            echo "版本格式错误: $1"
+            return 1
+        fi
+
+        if [ "${version}" == "help" ]; then
+            cleanupUsage
+            return 1
+        fi
+
+        cleanupVersion ${version}
+        return 0
+    fi
+
+    versions=$(
+        ls ${GOSDK_ROOT} |
+            grep -v current | grep -v gotip |
+            findGoVer |
+            awk -F . '{print $1 "." $2}' |
+            sortVer
+    )
+
+    for n in $versions; do
+        cleanupVersion $n
+    done
+}
+
+cleanupUsage() {
+    echo "清理版本 - 每一个大版本保留最新的一个版本"
+    echo ""
+    echo "Usage:"
+    echo "    ${name} cleanup <version>"
+    echo ""
+    echo "Example:"
+    echo "    ${name} cleanup"
+    echo "    ${name} cleanup 1.18"
+}
+
+downloadTip() {
+    if command -v go >/dev/null; then
         go version
     else
-        downloadTip ${version}
+        echo 安装tip必须先安装一个常规版本
+        return 1
     fi
+
+    echo "请确保已经准备好编译环境, 如 debian/ubuntu 可使用 apt install --reinstall build-essential 安装编译环境"
+
+    local tipRoot=${GOSDK_ROOT}/gotip
+    local ec=0
+    if [ -d "${tipRoot}/.git" ]; then
+        local repo=$(git -C ${tipRoot} remote get-url origin)
+        if [ "${repo}" != "${tipRepo}" ]; then
+            git -C ${tipRoot} remote set-url origin ${tipRepo}
+            ec=$?
+        fi
+    else
+        rm -rf ${tipRoot}
+        git clone --depth=1 ${tipRepo} ${tipRoot}
+        ec=$?
+    fi
+
+    if [ "$ec" -ne 0 ]; then
+        return 1
+    fi
+
+    git -C ${tipRoot} fetch origin master &&
+        git -C ${tipRoot} -c advice.detachedHead=false checkout FETCH_HEAD &&
+        git -C ${tipRoot} clean -i -d &&
+        cd ${tipRoot}/src &&
+        GOROOT_BOOTSTRAP=$(go env GOROOT) ${tipRoot}/src/make.bash &&
+        ln -fs ${tipRoot}/bin/go ${GOSDK_PATH}/gotip
+}
+
+setDefault() {
+    version=$(getInputVersion $1)
+    if [ -z "${version}" ]; then
+        echo "版本格式错误: $1"
+        return 1
+    fi
+
+    case $version in
+    help)
+        echo "设置默认版本"
+        echo ""
+        echo "Usage:"
+        echo "    ${name} use <version>"
+        echo ""
+        echo "Example:"
+        for v in $(listInstalledVersions); do
+            echo "    ${name} use ${v}"
+        done
+        return 1
+        ;;
+    gotip)
+        echo "请直接使用命令 gotip"
+        ;;
+    *)
+        checkRoot
+        GOROOT=${GOSDK_ROOT}/${version}
+        if [ -f "${GOROOT}/.unpacked-success" ]; then
+            rm -f ${GOSDK_ROOT}/current
+            ln -fs ${GOROOT} ${GOSDK_ROOT}/current
+
+            checkInstall
+            go version
+        else
+            showTip ${version}
+        fi
+        ;;
+    esac
 }
 
 main() {
-    version=$(checkVersion $1)
-    if [ "$?" -ne 0 ]; then
-        echo "unknown command: $1"
-        exit 1
+    version=$(getInputVersion $1)
+    if [ -z "${version}" ]; then
+        echo "命令错误: $@"
+        return 1
     fi
 
     if [ "${version}" == "help" ]; then
-        echo "管理golang sdk的版本"
+        echo "管理golang sdk的版本 ($(getOs) $(getArch))"
         echo ""
         echo "Usage:"
         echo "    ${name} [Command] [Flags]:"
         echo "    ${name} <version> [go command and flags]"
         echo ""
         echo "Example:"
-        echo "    goman 1.16.8 build"
+        echo "    ${name} download 1.16.8"
+        echo "    ${name} use 1.16.8"
+        echo "    ${name} 1.16.8 version"
         echo ""
         echo "Available Commands:"
-        echo "    list, ls          列出版本"
+        echo "    list, ls          版本"
         echo "    download, dl      下载"
-        echo "    install, i        安装"
+        echo "    upgrade, up       更新"
+        echo "    use, install, i   设置默认版本"
+        echo "    cleanup, rm       清理旧版，每个大版本仅保留最新的一个"
         echo "    remove, rm        删除"
         echo ""
-        exit 1
+        return 1
     fi
 
-    GOROOT=${sdkRoot}/${version}
+    GOROOT=${GOSDK_ROOT}/${version}
     if [ -f "${GOROOT}/.unpacked-success" ]; then
         GOROOT=${GOROOT} ${GOROOT}/bin/go ${@:2}
     else
-        downloadTip ${version}
+        showTip ${version}
     fi
 }
 
@@ -344,11 +478,17 @@ list | ls)
 download | dl)
     download ${@:2}
     ;;
-install | i)
-    install ${@:2}
+use | install | i)
+    setDefault ${@:2}
+    ;;
+up | upgrade)
+    up ${@:2}
     ;;
 remove | rm)
     remove ${@:2}
+    ;;
+cleanup)
+    cleanup ${@:2}
     ;;
 *)
     main $@

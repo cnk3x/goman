@@ -1,8 +1,6 @@
 # goman
 
-go sdk manage
-
-管理和安装 go sdk
+管理golang sdk的版本
 
 ## install
 
@@ -20,56 +18,100 @@ curl -SsL https://gitee.com/k3x/goman/raw/main/install_gitee.sh | bash
 
 ```shell
 $ goman
-manage the sdk of golang
+管理golang sdk的版本
 
 Usage:
     goman [Command] [Flags]:
-    goman <goVersion> [go command and flags]
+    goman <version> [go command and flags]
+
+Example:
+    goman download 1.16.8
+    goman use 1.16.8
+    goman 1.16.8 version
 
 Available Commands:
-    ls, list          list available gosdk
-    dl, download      download version
-    rm, remove        remove gosdk
-    ln, link          link the version
+    list, ls          版本
+    download, dl      下载
+    upgrade, up       更新
+    use, install, i   设置默认版本
+    cleanup, rm       删除旧版，每个大版本仅保留最新的一个
+    remove, rm        删除
 ```
 
 ```shell
 $ goman list -h
-list available versions
+列出版本号
 
 Usage:
     goman list [Flags]:
 
 Flags:
-    -a    list both stable and unstable versions
-    -u    list unstable versions
-    -i    list installed versions
+    -a    列出所有可安装的版本号
+    -i    列出已安装的版本
+    -c    当前使用版本
 ```
 
 ```shell
-$ goman download
-download go version
+$ goman upgrade -h
+更新当前使用的版本到最新版
+
+Usage:
+    goman upgrade [Flags]
+
+Example:
+    goman upgrade
+    goman upgrade -c
+
+Flags:
+    -c    更新当前小版本到最新版
+```
+
+```shell
+$ goman download -h
+下载指定版本
 
 Usage:
   goman download <version>
 
 Example:
   goman download go1.17rc1
-  goman download go1.17.1
+  goman download go1.16.6
+```
+
+```shell
+$ goman use -h
+设置默认版本
+
+Usage:
+  goman use <version>
+
+Example:
+  goman use 1.19
+  goman use 1.18.5
+  goman use 1.18
+```
+
+```shell
+$ goman cleanup -h
+清理版本 - 每一个大版本保留最新的一个版本
+
+Usage:
+    goman cleanup <version>
+
+Example:
+    goman cleanup
+    goman cleanup 1.18
 ```
 
 ```shell
 $ goman remove -h
-remove go version
+删除版本
 
 Usage:
-  goman remove go1.17rc1
-```
+  goman remove <version>
 
-```shell
-$ goman link -h
-link go version to current
-
-Usage:
-  goman link go1.17rc1
+Example:
+  goman remove 1.19
+  goman remove 1.18.5
+  goman remove 1.18
 ```
