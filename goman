@@ -75,10 +75,6 @@ getNewest() {
     fi
 }
 
-compareVersion() {
-    echo "$@" | tr " " "\n" | sed 's/go//g' | sortVer | head -n 1
-}
-
 showTip() {
     echo "$1 没有下载, 请先使用 \`${name} download $1\` 下载."
     return 1
@@ -204,7 +200,7 @@ download() {
         return 1
     fi
 
-    if [ "${version}" == "tip" ]; then
+    if [ "${version}" == "gotip" ]; then
         downloadTip
         return 0
     fi
@@ -258,7 +254,7 @@ remove() {
         return 1
     fi
 
-    if [ "${version}" == "tip" ]; then
+    if [ "${version}" == "gotip" ]; then
         echo "开始卸载: gotip"
         echo "删除链接: ${GOSDK_PATH}/gotip"
         echo "删除目录: ${GOSDK_ROOT}"
