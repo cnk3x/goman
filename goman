@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
-
-set -e
-
 GOSDK_ROOT=${GOSDK_ROOT:-/var/lib/golang}
 GOSDK_PATH=${GOSDK_PATH:-/usr/local/bin}
-dlPage=${GOSDK_DOWNLOAD_PAGE:-https://golang.google.cn/dl}
-tipRepo=${GOSDK_TIP_REPO:-https://gitee.com/mirrors/go.git}
+GOSDK_DOWNLOAD_PAGE=${GOSDK_DOWNLOAD_PAGE:-https://golang.google.cn/dl}
+GOSDK_TIP_REPO=${GOSDK_TIP_REPO:-https://gitee.com/mirrors/go.git}
 
 name=${0##*/}
 
@@ -65,7 +62,7 @@ getNewest() {
     local c="$(getCurrent)"
     local n="0.0"
     if [ "$c" = "0.0" -o "$1" != "-c" ]; then
-        n=$(curl -sL "${dlPage}/?mode=json" | grep version | head -n 1 | sed 's/ //g; s/"//g; s/version:go//g; s/,//g')
+        n=$(curl -sL "${GOSDK_DOWNLOAD_PAGE}/?mode=json" | grep version | head -n 1 | sed 's/ //g; s/"//g; s/version:go//g; s/,//g')
     else
         n=$(fetchRemoteVersions | grep "$(echo $c | awk -F . '{print $1 "." $2}')" | sortVer | head -n 1)
     fi
@@ -119,7 +116,7 @@ sortVer() {
 }
 
 fetchRemoteVersions() {
-    curl -SsL ${dlPage} | findGoVer
+    curl -SsL ${GOSDK_DOWNLOAD_PAGE} | findGoVer
 }
 
 checkInstall() {
@@ -232,7 +229,7 @@ download() {
         return 1
     fi
 
-    url="${dlPage}/${version}.${goos}-${goarch}.tar.gz"
+    url="${GOSDK_DOWNLOAD_PAGE}/${version}.${goos}-${goarch}.tar.gz"
 
     echo "下载版本: ${version}， 地址: ${url}"
 
@@ -368,13 +365,13 @@ downloadTip() {
     local ec=0
     if [ -d "${tipRoot}/.git" ]; then
         local repo=$(git -C ${tipRoot} remote get-url origin)
-        if [ "${repo}" != "${tipRepo}" ]; then
-            git -C ${tipRoot} remote set-url origin ${tipRepo}
+        if [ "${repo}" != "${GOSDK_TIP_REPO}" ]; then
+            git -C ${tipRoot} remote set-url origin ${GOSDK_TIP_REPO}
             ec=$?
         fi
     else
         rm -rf ${tipRoot}
-        git clone --depth=1 ${tipRepo} ${tipRoot}
+        git clone --depth=1 ${GOSDK_TIP_REPO} ${tipRoot}
         ec=$?
     fi
 
